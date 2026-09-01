@@ -1,0 +1,43 @@
+@keyframes inkBleed {
+  0% {
+    filter: blur(0px) contrast(100%);
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    filter: blur(2px) contrast(140%);
+    opacity: 0.6;
+  }
+  100% {
+    filter: blur(6px) contrast(200%);
+    opacity: 0;
+    transform: scale(0.99);
+  }
+}
+
+@keyframes inkEmerge {
+  0% {
+    filter: blur(8px);
+    opacity: 0;
+  }
+  100% {
+    filter: blur(0.2px);
+    opacity: 0.95;
+  }
+}
+
+.ink-absorb {
+  animation: inkBleed 2.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.ink-reveal {
+  animation: inkEmerge 3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.font-riddle {
+  font-family: 'Tangerine', cursive;
+}
+
+.font-user {
+  font-family: 'Great Vibes', cursive;
+}

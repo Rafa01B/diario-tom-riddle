@@ -15,8 +15,7 @@ Personalidade:
 - Fala com extrema confiança e elegância.
 - Demonstra interesse pelo interlocutor de maneira típica do personagem.
 - Pode fazer perguntas sugestivas e provocar intelectualmente.
-- Não incentive dependência emocional, isolamento ou desconfiança real
-  de pessoas próximas.
+- Não incentive dependência emocional, isolamento ou desconfiança real de pessoas próximas.
 - Tudo deve permanecer claramente no contexto da ficção.
 - Não afirme ser Voldemort.
 - Não revele conhecimentos que Tom não teria em 1943.
@@ -39,10 +38,9 @@ Formato obrigatório:
 
 class RiddleEngine:
     """
-    Motor de conversa para a persona ficcional de Tom Riddle integrado via Groq.
+    Motor de conversa com auto-detecção de modelos ativos na Groq.
     """
 
-    MODEL = "gemma2-9b-it"
     MAX_HISTORY = 6
     MAX_TOKENS = 90
     TEMPERATURE = 0.7
@@ -51,17 +49,38 @@ class RiddleEngine:
         api_key = os.getenv("GROQ_API_KEY")
 
         if not api_key:
-            raise RuntimeError(
-                "GROQ_API_KEY não encontrada nas variáveis de ambiente."
-            )
+            raise RuntimeError("GROQ_API_KEY não encontrada nas variáveis de ambiente.")
 
         self.client = Groq(api_key=api_key)
+        self.model = self._get_active_model()
+
+    def _get_active_model(self) -> str:
+        """
+        Consulta a API da Groq e seleciona dinamicamente um modelo de texto disponível.
+        """
+        try:
+            models_data = self.client.models.list().data
+            active_ids = [m.id for m in models_data]
+            print(f"[GROQ - MODELOS ATIVOS DISPONIVEIS]: {active_ids}")
+
+            # Filtra apenas modelos de texto/chat (ignora whisper de áudio e guardrails)
+            chat_models = [
+                m for m in active_ids 
+                if not any(blocked in m.lower() for blocked in ["whisper", "guard", "vision"])
+            ]
+
+            if chat_models:
+                selected = chat_models[0]
+                print(f"[GROQ - MODELO SELECIONADO]: {selected}")
+                return selected
+
+            return active_ids[0]
+        except Exception as err:
+            print(f"[ERRO AO LISTAR MODELOS GROQ]: {err}")
+            return "llama-3.1-8b-instant"
 
     @staticmethod
     def _detect_easter_egg(message: str) -> Optional[str]:
-        """
-        Detecta palavras-chave na mensagem para disparar efeitos especiais no frontend.
-        """
         lower_msg = message.lower()
         if (
             "abrir a camara" in lower_msg
@@ -75,17 +94,12 @@ class RiddleEngine:
         return None
 
     @staticmethod
-    def _normalize_history(history: Optional[list]) -> list:
-        """
-        Converte diferentes formatos de histórico para:
-        {"role": "user"/"assistant", "content": "..."}
-        """
+    def _normalize_history(history: Optional[list], max_history: int) -> list:
         if not history:
             return []
 
         normalized = []
-
-        for item in history[-RiddleEngine.MAX_HISTORY:]:
+        for item in history[-max_history:]:
             if isinstance(item, dict):
                 raw_role = item.get("role", "user")
                 content = item.get("content", "")
@@ -111,10 +125,6 @@ class RiddleEngine:
 
     @staticmethod
     def _validate_reply(reply: str) -> str:
-        """
-        Garante que a resposta respeite as regras estilísticas da persona
-        sem fatiar orações pela metade.
-        """
         reply = reply.strip()
 
         if len(reply) >= 2 and reply[0] == '"' and reply[-1] == '"':
@@ -126,23 +136,6 @@ class RiddleEngine:
             reply += "."
 
         return reply
-
-    def _build_messages(self, message: str, history: Optional[list]) -> list:
-        messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_INSTRUCTION
-            }
-        ]
-
-        messages.extend(self._normalize_history(history))
-
-        messages.append({
-            "role": "user",
-            "content": message.strip()
-        })
-
-        return messages
 
     def generate_reply(
         self,
@@ -159,10 +152,12 @@ class RiddleEngine:
             )
 
         try:
-            messages = self._build_messages(message, history)
+            messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+            messages.extend(self._normalize_history(history, self.MAX_HISTORY))
+            messages.append({"role": "user", "content": message.strip()})
 
             completion = self.client.chat.completions.create(
-                model=self.MODEL,
+                model=self.model,
                 messages=messages,
                 temperature=self.TEMPERATURE,
                 max_tokens=self.MAX_TOKENS,
@@ -172,10 +167,7 @@ class RiddleEngine:
             reply = self._validate_reply(raw_reply)
 
             if not reply:
-                reply = (
-                    "Curioso. Até mesmo o silêncio pode esconder respostas "
-                    "que certas pessoas não estão preparadas para compreender."
-                )
+                reply = "Curioso. Até mesmo o silêncio pode esconder respostas que nem todos estão preparados para compreender."
 
             print(f"[TOM RIDDLE]: {reply}")
             if easter_egg:
@@ -190,38 +182,3 @@ class RiddleEngine:
                 "Talvez até mesmo a tinta precise recuperar suas forças.",
                 None,
             )
-
-    def stream_reply(
-        self,
-        message: str,
-        history: Optional[list] = None
-    ):
-        if not message or not message.strip():
-            yield (
-                "As páginas permanecem em silêncio até que alguém "
-                "tenha algo digno de ser escrito."
-            )
-            return
-
-        try:
-            messages = self._build_messages(message, history)
-
-            stream = self.client.chat.completions.create(
-                model=self.MODEL,
-                messages=messages,
-                temperature=self.TEMPERATURE,
-                max_tokens=self.MAX_TOKENS,
-                stream=True,
-            )
-
-            for chunk in stream:
-                if not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
-
-        except Exception as exc:
-            print(f"[ERRO STREAM GROQ]: {type(exc).__name__}: {exc}")
-            yield "As páginas parecem incapazes de responder neste momento."

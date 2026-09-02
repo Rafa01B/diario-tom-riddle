@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL
+// Garante o prefixo /api e remove barras duplicadas no final caso existam
+const rawUrl = import.meta.env.VITE_API_URL || 'https://diario-tom-riddle.onrender.com/api';
+const API_BASE_URL = rawUrl.replace(/\/+$/, '');
 
 export function useDiarySession() {
   const [messages, setMessages] = useState([]);
@@ -15,48 +17,56 @@ export function useDiarySession() {
     setIsBusy(true);
     setEasterEgg(null);
 
-    // Exibe a mensagem do usuário
+    // 1. Exibe a mensagem escrita pelo usuário
     setCurrentDisplay({ type: 'user', text: userText, phase: 'writing' });
 
-    // Absorve a tinta
+    // 2. Transição de absorção da tinta no pergaminho
     setTimeout(() => {
-      setCurrentDisplay((prev) => prev ? { ...prev, phase: 'absorbing' } : null);
+      setCurrentDisplay((prev) => (prev ? { ...prev, phase: 'absorbing' } : null));
     }, 1200);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/write`, {
+      // Dispara a requisição para a rota correta: /api/write
+      const endpoint = API_BASE_URL.endsWith('/api') 
+        ? `${API_BASE_URL}/write` 
+        : `${API_BASE_URL}/api/write`;
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
           message: userText,
-          history: messages
+          history: messages,
         }),
       });
 
-      if (!response.ok) throw new Error('Falha ao comunicar com o diário');
+      if (!response.ok) {
+        throw new Error(`Falha no servidor: ${response.status}`);
+      }
+
       const data = await response.json();
 
       const updatedHistory = [
         ...messages,
         { role: 'user', content: userText },
-        { role: 'assistant', content: data.response }
+        { role: 'assistant', content: data.response },
       ];
 
-      // Dispara a revelação e ativa qualquer evento místico
+      // Revela a resposta de Riddle após a tinta sumir
       setTimeout(() => {
         setMessages(updatedHistory);
         setEasterEgg(data.easter_egg_triggered);
         setCurrentDisplay({ type: 'riddle', text: data.response, phase: 'revealing' });
         setIsBusy(false);
-      }, 3200);
+      }, 3000);
 
     } catch (err) {
-      console.error(err);
+      console.error('[ERRO DE CONEXAO]:', err);
       setCurrentDisplay({
         type: 'riddle',
-        text: 'Algo perturbou a magia destas páginas...',
-        phase: 'revealing'
+        text: 'O pergaminho está despertando das sombras... Aguarde alguns instantes e tente novamente.',
+        phase: 'revealing',
       });
       setIsBusy(false);
     }

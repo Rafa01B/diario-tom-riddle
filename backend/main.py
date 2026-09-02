@@ -1,31 +1,44 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from schemas import WriteRequest, WriteResponse
+from pydantic import BaseModel
+from typing import List, Optional
 from riddle_service import RiddleEngine
 
-app = FastAPI(title="Tom Riddle's Diary API", version="1.0.0")
+app = FastAPI(title="Tom Riddle's Diary API")
 
+# Permite que o frontend na Vercel acesse a API sem bloqueios de segurança
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite conexões locais em qualquer porta do Vite (5173, 5174, etc.)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-riddle_engine = RiddleEngine()
+engine = RiddleEngine()
 
-@app.post("/api/write", response_model=WriteResponse, status_code=status.HTTP_200_OK)
-def write_to_diary(payload: WriteRequest):
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class WriteRequest(BaseModel):
+    session_id: str
+    message: str
+    history: Optional[List[ChatMessage]] = []
+
+class WriteResponse(BaseModel):
+    response: str
+    easter_egg_triggered: Optional[str] = None
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "O Diário de Tom Riddle está ativo."}
+
+@app.post("/api/write", response_model=WriteResponse)
+def write_in_diary(payload: WriteRequest):
     try:
-        reply, easter_egg = riddle_engine.generate_reply(
-            message=payload.message,
-            history=payload.history
-        )
+        reply, easter_egg = engine.generate_reply(payload.message, payload.history)
         return WriteResponse(response=reply, easter_egg_triggered=easter_egg)
     except Exception as e:
         print(f"[ERRO NO DIARIO]: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"O diário resistiu à escrita: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail="Algo perturbou a magia destas páginas...")

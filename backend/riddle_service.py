@@ -56,28 +56,40 @@ class RiddleEngine:
 
     def _get_active_model(self) -> str:
         """
-        Consulta a API da Groq e seleciona dinamicamente um modelo de texto disponível.
+        Consulta os modelos da Groq e prioriza os modelos de chat ideais e liberados.
         """
         try:
             models_data = self.client.models.list().data
             active_ids = [m.id for m in models_data]
-            print(f"[GROQ - MODELOS ATIVOS DISPONIVEIS]: {active_ids}")
+            print(f"[GROQ - MODELOS DISPONIVEIS]: {active_ids}")
 
-            # Filtra apenas modelos de texto/chat (ignora whisper de áudio e guardrails)
+            # Filtra modelos de audio, visao, guardrails e termos pendentes
             chat_models = [
                 m for m in active_ids 
-                if not any(blocked in m.lower() for blocked in ["whisper", "guard", "vision"])
+                if not any(blocked in m.lower() for blocked in [
+                    "whisper", "guard", "vision", "arabic", "canopylabs"
+                ])
             ]
 
-            if chat_models:
-                selected = chat_models[0]
-                print(f"[GROQ - MODELO SELECIONADO]: {selected}")
-                return selected
+            # Modelos ideais que estão liberados na sua conta
+            preferred = [
+                "groq/compound",
+                "groq/compound-mini",
+                "qwen/qwen3.6-27b",
+                "openai/gpt-oss-20b"
+            ]
 
-            return active_ids[0]
+            for pref in preferred:
+                if pref in chat_models:
+                    print(f"[GROQ - MODELO SELECIONADO]: {pref}")
+                    return pref
+
+            selected = chat_models[0] if chat_models else "groq/compound"
+            print(f"[GROQ - MODELO SELECIONADO]: {selected}")
+            return selected
         except Exception as err:
             print(f"[ERRO AO LISTAR MODELOS GROQ]: {err}")
-            return "llama-3.1-8b-instant"
+            return "groq/compound"
 
     @staticmethod
     def _detect_easter_egg(message: str) -> Optional[str]:

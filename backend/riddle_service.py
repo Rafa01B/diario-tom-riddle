@@ -42,7 +42,7 @@ class RiddleEngine:
     Motor de conversa para a persona ficcional de Tom Riddle integrado via Groq.
     """
 
-    MODEL = "llama-3.1-8b-instant"
+    MODEL = "llama3-8b-8192"
     MAX_HISTORY = 6
     MAX_TOKENS = 90
     TEMPERATURE = 0.7

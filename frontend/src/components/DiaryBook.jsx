@@ -80,13 +80,13 @@ export default function DiaryBook() {
           </div>
 
           {/* Área central mágica de texto */}
-          <section className="relative z-10 flex-1 flex flex-col justify-center items-center text-center px-4 sm:px-8 py-4 overflow-y-auto max-h-[420px]">
+          <section className="relative z-10 flex-1 flex flex-col justify-start items-center text-center px-4 sm:px-8 py-4 overflow-y-auto max-h-[420px]">
             {currentDisplay && (
               <div
                 key={currentDisplay.text}
                 className={`
-                  max-w-2xl w-full break-words whitespace-pre-line leading-relaxed
-                  ${currentDisplay.type === 'user' ? 'font-user text-2xl sm:text-3xl text-[#120d0b]' : 'font-riddle text-3xl sm:text-4xl md:text-5xl font-bold tracking-wide'}
+                  my-auto max-w-2xl w-full break-words whitespace-pre-line leading-relaxed
+                  ${currentDisplay.type === 'user' ? 'font-user text-2xl sm:text-3xl text-[#120d0b]' : 'font-riddle text-2xl sm:text-3xl md:text-4xl font-bold tracking-wide'}
                   ${currentDisplay.type === 'riddle' && easterEgg === 'dark_mark_flicker' ? 'text-[#3d0808]' : ''}
                   ${currentDisplay.type === 'riddle' && easterEgg === 'parseltongue_whisper' ? 'text-[#072412]' : 'text-[#080504]'}
                   ${currentDisplay.phase === 'absorbing' ? 'ink-absorb' : ''}
@@ -99,7 +99,7 @@ export default function DiaryBook() {
 
             {/* Sussurro espectral enquanto Tom formula sua resposta */}
             {isBusy && !currentDisplay?.text && (
-              <div className="ghost-whisper font-cinzel text-xs tracking-[0.4em] text-[#5e4b3c] uppercase">
+              <div className="my-auto ghost-whisper font-cinzel text-xs tracking-[0.4em] text-[#5e4b3c] uppercase">
                 As páginas despertam...
               </div>
             )}

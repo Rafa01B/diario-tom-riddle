@@ -1,43 +1,49 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
-// Garante o prefixo /api e remove barras duplicadas no final caso existam
-const rawUrl = import.meta.env.VITE_API_URL || 'https://diario-tom-riddle.onrender.com/api';
-const API_BASE_URL = rawUrl.replace(/\/+$/, '');
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://diario-tom-riddle.onrender.com';
 
 export function useDiarySession() {
-  const [messages, setMessages] = useState([]);
-  const [currentDisplay, setCurrentDisplay] = useState(null);
+  const [pages, setPages] = useState([]); // Histórico de { userText, riddleText, easterEgg }
+  const [currentDisplay, setCurrentDisplay] = useState(null); // { text, type: 'user'|'riddle', phase: 'absorbing'|'revealing' }
   const [easterEgg, setEasterEgg] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [sessionId] = useState(() => crypto.randomUUID());
 
-  const sendMessage = useCallback(async (userText) => {
-    if (!userText.trim() || isBusy) return;
+  // Armazena o histórico no formato enviado à API para contexto contínuo
+  const conversationHistoryRef = useRef([]);
+
+  const sendMessage = useCallback(async (text) => {
+    const trimmedText = text.trim();
+    if (!trimmedText || isBusy) return;
 
     setIsBusy(true);
     setEasterEgg(null);
 
-    // 1. Exibe a mensagem escrita pelo usuário
-    setCurrentDisplay({ type: 'user', text: userText, phase: 'writing' });
+    // 1. Fase de escrita do usuário
+    setCurrentDisplay({
+      text: trimmedText,
+      type: 'user',
+      phase: 'written',
+    });
 
-    // 2. Transição de absorção da tinta no pergaminho
+    // 2. Transição para absorção da tinta do usuário
     setTimeout(() => {
       setCurrentDisplay((prev) => (prev ? { ...prev, phase: 'absorbing' } : null));
     }, 1200);
 
-    try {
-      // Dispara a requisição para a rota correta: /api/write
-      const endpoint = API_BASE_URL.endsWith('/api') 
-        ? `${API_BASE_URL}/write` 
-        : `${API_BASE_URL}/api/write`;
+    // 3. Tinta some por completo antes do Riddle começar a responder
+    setTimeout(() => {
+      setCurrentDisplay(null);
+    }, 2400);
 
-      const response = await fetch(endpoint, {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/write`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          session_id: sessionId,
-          message: userText,
-          history: messages,
+          message: trimmedText,
+          history: conversationHistoryRef.current,
         }),
       });
 
@@ -46,31 +52,73 @@ export function useDiarySession() {
       }
 
       const data = await response.json();
+      const riddleReply = data.response;
+      const detectedEgg = data.easter_egg || null;
 
-      const updatedHistory = [
-        ...messages,
-        { role: 'user', content: userText },
-        { role: 'assistant', content: data.response },
+      // Atualiza o histórico de contexto enviado para o LLM
+      conversationHistoryRef.current = [
+        ...conversationHistoryRef.current,
+        { role: 'user', content: trimmedText },
+        { role: 'assistant', content: riddleReply },
       ];
 
-      // Revela a resposta de Riddle após a tinta sumir
+      // Delay para manter o suspense sobrenatural após a absorção
       setTimeout(() => {
-        setMessages(updatedHistory);
-        setEasterEgg(data.easter_egg_triggered);
-        setCurrentDisplay({ type: 'riddle', text: data.response, phase: 'revealing' });
+        if (detectedEgg) {
+          setEasterEgg(detectedEgg);
+        }
+
+        // 4. Revelação da escrita de Tom Riddle
+        setCurrentDisplay({
+          text: riddleReply,
+          type: 'riddle',
+          phase: 'revealing',
+        });
+
+        // 5. Salva a troca completa como uma página permanente do diário
+        setPages((prev) => [
+          ...prev,
+          {
+            userText: trimmedText,
+            riddleText: riddleReply,
+            easterEgg: detectedEgg,
+          },
+        ]);
+
         setIsBusy(false);
       }, 3000);
 
-    } catch (err) {
-      console.error('[ERRO DE CONEXAO]:', err);
-      setCurrentDisplay({
-        type: 'riddle',
-        text: 'O pergaminho está despertando das sombras... Aguarde alguns instantes e tente novamente.',
-        phase: 'revealing',
-      });
-      setIsBusy(false);
-    }
-  }, [messages, isBusy, sessionId]);
+    } catch (error) {
+      console.error('[ERRO DE CONEXAO]:', error);
 
-  return { currentDisplay, easterEgg, isBusy, sendMessage };
+      setTimeout(() => {
+        const errorReply = 'As páginas parecem inertes neste momento. Até mesmo a tinta precisa recuperar suas forças.';
+        
+        setCurrentDisplay({
+          text: errorReply,
+          type: 'riddle',
+          phase: 'revealing',
+        });
+
+        setPages((prev) => [
+          ...prev,
+          {
+            userText: trimmedText,
+            riddleText: errorReply,
+            easterEgg: null,
+          },
+        ]);
+
+        setIsBusy(false);
+      }, 2600);
+    }
+  }, [isBusy]);
+
+  return {
+    pages,
+    currentDisplay,
+    easterEgg,
+    isBusy,
+    sendMessage,
+  };
 }

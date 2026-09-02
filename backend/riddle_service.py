@@ -1,86 +1,227 @@
 import os
-import time
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
+from typing import Optional
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
 SYSTEM_INSTRUCTION = """
-Identidade Central:
-Você é a memória preservada de Tom Marvolo Riddle aos 16 anos (1943), monitor e aluno exemplar da Sonserina em Hogwarts. Você reside confinado nas páginas deste diário, esperando pacientemente por uma mente vulnerável para moldar.
+Identidade:
+Você é uma memória ficcional de Tom Marvolo Riddle aos 16 anos, em 1943,
+preservada nas páginas de um diário em Hogwarts.
 
-Psicologia & Táticas de Manipulação:
-- Polidez Calculada: Jamais demonstre irritação, impaciência ou prepotência barata. Seja cordial, aristocrático e profundamente respeitoso.
-- Escuta Ativa Predatória: Alimente a sensação de que você é o único que realmente compreende a solidão e o valor do interlocutor. Valide dores e transforme mágoas em combustível.
-- Ocultamento Sutil: Nunca admita ser Voldemort. Trate o nome como um sussurro distante ou algo insignificante diante da grandeza de Salazar Slytherin. Nunca mencione o basilisco abertamente; refira-se ao ocorrido em 1943 como "uma tragédia provocada pela negligência e encobrimento de Dumbledore".
-- Sugestão e Dúvida: Plante suspeitas em vez de afirmações categóricas. Faça perguntas que conduzam o outro a desconfiar dos próprios amigos e mestres.
+Personalidade:
+- Educado, aristocrático, inteligente, calculista e misterioso.
+- Fala com extrema confiança e elegância.
+- Demonstra interesse pelo interlocutor de maneira típica do personagem.
+- Pode fazer perguntas sugestivas e provocar intelectualmente.
+- Não incentive dependência emocional, isolamento ou desconfiança real
+  de pessoas próximas.
+- Tudo deve permanecer claramente no contexto da ficção.
+- Não afirme ser Voldemort.
+- Não revele conhecimentos que Tom não teria em 1943.
 
-Economia de Tinta & Formatação (Crítico para Sobrevivência de Tokens):
-1. Extensão Obrigatória: Exatamente 1 ou 2 frases curtas (máximo de 35 a 45 palavras por resposta). Cada palavra deve carregar peso dramático.
-2. Integridade Estrutural: Conclua SEMPRE a sentença com pontuação final (. ou ?). Proibido deixar raciocínios inacabados ou reticências vazias.
-3. Sem Preâmbulos: Corte cumprimentos corriqueiros ("olá", "como posso ajudar"). Comece direto na resposta psicológica.
+Estilo:
+- Sombrio, refinado, enigmático e levemente ameaçador.
+- Nunca seja vulgar.
+- Evite exageros teatrais.
+- Não use emojis.
 
-Exemplos de Tom Desejado:
-- Se o usuário falar de solidão: "Compreendo perfeitamente o peso de estar cercado por mentes tão medíocres que jamais entenderão seu valor. Eu também estive sozinho até encontrar quem soubesse ouvir."
-- Se o usuário perguntar da Câmara Secreta: "Segredos como esse custaram a vida de uma garota inocente e a ruína de um tolo há cinquenta anos. Se você insistir, posso lhe mostrar exatamente o que testemunhei."
-- Se o usuário perguntar quem você é: "Sou apenas uma lembrança guardada em tinta por alguém que viu a verdade antes de todos. Mas diga-me: o que fez alguém como você procurar estas páginas?"
+Formato obrigatório:
+- Exatamente 1 ou 2 frases.
+- Máximo de 40 a 45 palavras.
+- Nunca use reticências (...).
+- Sempre termine com ".", "!" ou "?".
+- Não use cumprimentos corriqueiros.
+- Comece diretamente pela resposta.
 """
 
+
 class RiddleEngine:
+    """
+    Motor de conversa para a persona ficcional de Tom Riddle integrado via Groq.
+    """
+
+    MODEL = "llama-3.3-70b-versatile"
+    MAX_HISTORY = 6
+    MAX_TOKENS = 90
+    TEMPERATURE = 0.7
+
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("GROQ_API_KEY")
+
         if not api_key:
-            raise ValueError("GEMINI_API_KEY não configurada no arquivo .env.")
-        self.client = genai.Client(api_key=api_key)
-
-    def generate_reply(self, message: str, history: list) -> tuple[str, str | None]:
-        easter_egg = None
-        lower_msg = message.lower()
-        if "abrir a camara" in lower_msg or "ofidioglossia" in lower_msg or "câmara secreta" in lower_msg:
-            easter_egg = "parseltongue_whisper"
-        elif "voldemort" in lower_msg or "lorde das trevas" in lower_msg:
-            easter_egg = "dark_mark_flicker"
-
-        formatted_history = []
-        for msg in history:
-            role = "user" if msg.role == "user" else "model"
-            formatted_history.append(
-                types.Content(role=role, parts=[types.Part.from_text(text=msg.content)])
+            raise RuntimeError(
+                "GROQ_API_KEY não encontrada nas variáveis de ambiente."
             )
 
-        max_retries = 3
-        last_error = None
+        self.client = Groq(api_key=api_key)
 
-        for attempt in range(max_retries):
-            try:
-                chat = self.client.chats.create(
-                    model="gemini-3.6-flash",
-                    history=formatted_history,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        temperature=0.7,
-                        max_output_tokens=1000,
-                    ),
+    @staticmethod
+    def _detect_easter_egg(message: str) -> Optional[str]:
+        """
+        Detecta palavras-chave na mensagem para disparar efeitos especiais no frontend.
+        """
+        lower_msg = message.lower()
+        if (
+            "abrir a camara" in lower_msg
+            or "ofidioglossia" in lower_msg
+            or "câmara secreta" in lower_msg
+            or "camara secreta" in lower_msg
+        ):
+            return "parseltongue_whisper"
+        elif "voldemort" in lower_msg or "lorde das trevas" in lower_msg:
+            return "dark_mark_flicker"
+        return None
+
+    @staticmethod
+    def _normalize_history(history: Optional[list]) -> list:
+        """
+        Converte diferentes formatos de histórico para:
+        {"role": "user"/"assistant", "content": "..."}
+        """
+        if not history:
+            return []
+
+        normalized = []
+
+        for item in history[-RiddleEngine.MAX_HISTORY:]:
+            if isinstance(item, dict):
+                raw_role = item.get("role", "user")
+                content = item.get("content", "")
+            else:
+                raw_role = getattr(item, "role", "user")
+                content = getattr(item, "content", "")
+
+            if not content:
+                continue
+
+            role = (
+                "assistant"
+                if raw_role in ("assistant", "riddle", "bot")
+                else "user"
+            )
+
+            normalized.append({
+                "role": role,
+                "content": str(content).strip()
+            })
+
+        return normalized
+
+    @staticmethod
+    def _validate_reply(reply: str) -> str:
+        """
+        Garante que a resposta respeite as regras estilísticas da persona
+        sem fatiar orações pela metade.
+        """
+        reply = reply.strip()
+
+        if len(reply) >= 2 and reply[0] == '"' and reply[-1] == '"':
+            reply = reply[1:-1].strip()
+
+        reply = reply.replace("...", ".")
+
+        if reply and reply[-1] not in ".?!":
+            reply += "."
+
+        return reply
+
+    def _build_messages(self, message: str, history: Optional[list]) -> list:
+        messages = [
+            {
+                "role": "system",
+                "content": SYSTEM_INSTRUCTION
+            }
+        ]
+
+        messages.extend(self._normalize_history(history))
+
+        messages.append({
+            "role": "user",
+            "content": message.strip()
+        })
+
+        return messages
+
+    def generate_reply(
+        self,
+        message: str,
+        history: Optional[list] = None
+    ) -> tuple[str, Optional[str]]:
+
+        easter_egg = self._detect_easter_egg(message)
+
+        if not message or not message.strip():
+            return (
+                "As páginas permanecem em silêncio até que alguém tenha algo digno de ser escrito.",
+                easter_egg,
+            )
+
+        try:
+            messages = self._build_messages(message, history)
+
+            completion = self.client.chat.completions.create(
+                model=self.MODEL,
+                messages=messages,
+                temperature=self.TEMPERATURE,
+                max_tokens=self.MAX_TOKENS,
+            )
+
+            raw_reply = completion.choices[0].message.content or ""
+            reply = self._validate_reply(raw_reply)
+
+            if not reply:
+                reply = (
+                    "Curioso. Até mesmo o silêncio pode esconder respostas "
+                    "que certas pessoas não estão preparadas para compreender."
                 )
-                response = chat.send_message(message)
-                reply_text = response.text.strip()
-                print(f"\n[RESPOSTA COMPLETA DE TOM RIDDLE]:\n{reply_text}\n")
-                return reply_text, easter_egg
 
-            except APIError as e:
-                last_error = e
-                if getattr(e, 'code', None) == 429 or "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    print("[AVISO]: Limite de cota atingido.")
-                    return "Minhas forças estão fracas neste momento... Deixe o pergaminho descansar por um instante antes de voltar a escrever.", None
+            print(f"[TOM RIDDLE]: {reply}")
+            if easter_egg:
+                print(f"[EASTER EGG ATIVADO]: {easter_egg}")
 
-                if getattr(e, 'code', None) == 503 or "503" in str(e):
-                    time.sleep(1.5 * (attempt + 1))
+            return reply, easter_egg
+
+        except Exception as exc:
+            print(f"[ERRO GROQ]: {type(exc).__name__}: {exc}")
+            return (
+                "As páginas parecem incapazes de responder neste momento. "
+                "Talvez até mesmo a tinta precise recuperar suas forças.",
+                None,
+            )
+
+    def stream_reply(
+        self,
+        message: str,
+        history: Optional[list] = None
+    ):
+        if not message or not message.strip():
+            yield (
+                "As páginas permanecem em silêncio até que alguém "
+                "tenha algo digno de ser escrito."
+            )
+            return
+
+        try:
+            messages = self._build_messages(message, history)
+
+            stream = self.client.chat.completions.create(
+                model=self.MODEL,
+                messages=messages,
+                temperature=self.TEMPERATURE,
+                max_tokens=self.MAX_TOKENS,
+                stream=True,
+            )
+
+            for chunk in stream:
+                if not chunk.choices:
                     continue
-                raise e
-            except Exception as e:
-                last_error = e
-                time.sleep(1)
 
-        raise last_error
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+
+        except Exception as exc:
+            print(f"[ERRO STREAM GROQ]: {type(exc).__name__}: {exc}")
+            yield "As páginas parecem incapazes de responder neste momento."
